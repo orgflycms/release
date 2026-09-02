@@ -5,9 +5,9 @@
 
 Товары, корзина, заказы, админка. Плагины — папки с Go-кодом, которые ядро
 читает на лету: положили папку, нажали «Перечитать» — раздел появился в
-админке. Первый плагин, «Промокоды», лежит в открытом репозитории
-[sitecms/plugins](https://github.com/sitecms/plugins) — там же контракт и
-инструкция, как написать свой.
+админке. Готовые плагины — в маркетплейсе, ставятся кнопкой из админки;
+контракт и инструкция, как написать свой, — в открытом репозитории
+[sitecms/sdk](https://github.com/sitecms/sdk).
 
 ## Установка
 
@@ -16,8 +16,8 @@ curl -fsSL https://raw.githubusercontent.com/sitecms/release/main/install.sh | s
 ```
 
 Скрипт спросит домен или IP, поставит docker, если его нет, положит
-`docker-compose.yml` в `/opt/sitecms` и поднимет магазин. В конце покажет
-адрес, логин `admin` и пароль — один раз.
+`docker-compose.yml` в `/opt/sitecms` и поднимет магазин. Дальше визард в
+браузере: название, владелец, демо-товары.
 
 Нужен Linux с systemd и `curl`. Подробности, домен, плагины и удаление — в
 [docs/install.md](docs/install.md).
@@ -33,9 +33,10 @@ cd /opt/sitecms && docker compose pull && docker compose up -d
 
 ## Плагины
 
-Папка `/opt/sitecms/plugins/`: по подпапке на плагин. Скрипт установки
-кладёт туда «Промокоды». Как написать свой —
-[docs/plugins.md](docs/plugins.md).
+В админке — «Маркетплейс»: каталог с сайта sitecms, бесплатные и платные
+плагины, установка кнопкой без перезапуска. Свои — папка
+`/opt/sitecms/plugins/`, по подпапке на плагин. Как написать и опубликовать
+— [docs/plugins.md](docs/plugins.md).
 
 ## Что внутри
 
@@ -49,6 +50,6 @@ cd /opt/sitecms && docker compose pull && docker compose up -d
 
 Здесь документация, `install.sh` и `docker-compose.yml`. Образы движка —
 в [пакетах](https://github.com/sitecms/engine/pkgs/container/engine).
-Исходный код ядра закрыт; плагины и их контракт открыты.
+Исходный код ядра закрыт; контракт плагинов открыт.
 
 Нашли ошибку или нужна функция — [issues](https://github.com/sitecms/release/issues).

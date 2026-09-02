@@ -3,16 +3,15 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/sitecms/release/main/install.sh | sudo sh
 #
-# Ставит docker (если нет), кладёт compose в /opt/sitecms, забирает плагин
-# «Промокоды» и поднимает магазин. Повторный запуск обновляет образы и
-# перезапускает службы, данные не трогает.
+# Ставит docker (если нет), кладёт compose в /opt/sitecms и поднимает
+# магазин. Плагины — из маркетплейса в админке. Повторный запуск обновляет
+# образы и перезапускает службы, данные не трогает.
 #
 # Вопрос про адрес задаётся в терминал, даже когда скрипт пришёл по трубе:
 # он читает ответ из /dev/tty. Чтобы не спрашивал, задайте SITECMS_HOST.
 set -eu
 
 repo=sitecms/release
-plugins_repo=sitecms/plugins
 dir=/opt/sitecms
 raw="https://raw.githubusercontent.com/$repo/main"
 
@@ -84,14 +83,6 @@ cat >Caddyfile <<EOC
 }
 EOC
 
-if [ ! -d plugins/promo ]; then
-	say "Забираю плагин «Промокоды»"
-	tmp=$(mktemp -d)
-	curl -fsSL "https://github.com/$plugins_repo/archive/refs/heads/main.tar.gz" | tar -xz -C "$tmp" &&
-		cp -r "$tmp"/plugins-main/promo plugins/ || echo "    не вышло — положите папку плагина в $dir/plugins руками"
-	rm -rf "$tmp"
-fi
-
 # --- запуск --------------------------------------------------------------
 say "Поднимаю магазин"
 docker compose pull -q
@@ -105,23 +96,19 @@ while [ "$i" -lt 60 ]; do
 	sleep 1
 done
 
-log=$(docker compose logs engine 2>/dev/null || true)
-pass=$(printf '%s\n' "$log" | sed -n 's/.*выдан пароль владельца.*password=\([^ ]*\).*/\1/p' | tail -1)
-
 echo
 say "Готово."
 echo
-echo "    Адрес:   https://$host"
+echo "    Магазин: https://$host"
 echo "    Админка: https://$host/admin"
-if [ -n "$pass" ]; then
-	echo "    Логин:   admin"
-	echo "    Пароль:  $pass"
-	echo
-	echo "    Пароль показан один раз — смените его в «Настройках»."
+echo
+if docker compose logs engine 2>/dev/null | grep -q "не установлен"; then
+	echo "  Откройте https://$host/install — визард спросит название, логин"
+	echo "  и пароль владельца и нужны ли демо-товары. До этого магазин"
+	echo "  ничего другого не показывает."
 else
-	echo "    Вход прежний: пароль владельца выдавался при первой установке."
-	echo "    Забыли — он есть в логе: docker compose logs engine | grep password"
+	echo "  Вход прежний: логин и пароль задавались в визарде установки."
 fi
 echo
-echo "  Плагины: $dir/plugins — по папке на плагин, «Перечитать» в админке."
+echo "  Плагины: раздел «Маркетплейс» в админке; свои — $dir/plugins, по папке на плагин."
 echo "  Обновить: cd $dir && docker compose pull && docker compose up -d"
