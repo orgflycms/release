@@ -48,7 +48,8 @@ cd /opt/sitecms && docker compose pull && docker compose up -d
 
 ## Этот репозиторий
 
-Здесь документация, `install.sh` и `docker-compose.yml`. Образы движка —
+Здесь документация, `install.sh`, `docker-compose.yml` и `.env.dist` —
+образец переменных, которые `install.sh` записывает в `.env`. Образы движка —
 в [пакетах](https://github.com/sitecms/engine/pkgs/container/engine).
 Исходный код ядра закрыт; контракт плагинов открыт.
 

@@ -21,7 +21,8 @@ curl -fsSL https://raw.githubusercontent.com/sitecms/release/main/install.sh | s
 ```
 /opt/sitecms/
   docker-compose.yml   движок + Postgres + Caddy
-  .env                 SITECMS_HOST, DB_PASSWORD — не менять после первого старта
+  .env                 SITECMS_HOST, DB_PASSWORD — не менять после первого старта;
+                       образец — .env.dist в репозитории
   Caddyfile            https: Let's Encrypt для домена, самоподписанный для IP
   plugins/             по подпапке на плагин
 ```
