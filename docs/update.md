@@ -1,7 +1,7 @@
 # Обновление
 
 ```sh
-cd /opt/sitecms && docker compose pull && docker compose up -d
+cd /opt/flycms && docker compose pull && docker compose up -d
 ```
 
 Compose скачает свежий образ движка и пересоздаст контейнер. База и плагины
@@ -12,8 +12,8 @@ Compose скачает свежий образ движка и пересозд�
 
 ## Конкретная версия
 
-В `docker-compose.yml` замените `ghcr.io/sitecms/engine:latest` на
-`ghcr.io/sitecms/engine:v0.1.0` и выполните `docker compose up -d`. Так же
+В `docker-compose.yml` замените `ghcr.io/flycms/engine:latest` на
+`ghcr.io/flycms/engine:v0.1.0` и выполните `docker compose up -d`. Так же
 делается откат.
 
 ## Если что-то пошло не так

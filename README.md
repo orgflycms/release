@@ -1,4 +1,4 @@
-# sitecms
+# flycms
 
 Интернет-магазин на своём сервере, который расширяется плагинами. Ставится
 одной командой, работает в docker compose: движок, Postgres и Caddy с https.
@@ -7,16 +7,16 @@
 читает на лету: положили папку, нажали «Перечитать» — раздел появился в
 админке. Готовые плагины — в маркетплейсе, ставятся кнопкой из админки;
 контракт и инструкция, как написать свой, — в открытом репозитории
-[sitecms/sdk](https://github.com/sitecms/sdk).
+[flycms/sdk](https://github.com/orgflycms/sdk).
 
 ## Установка
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sitecms/release/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/flycms/release/main/install.sh | sudo sh
 ```
 
 Скрипт спросит домен или IP, поставит docker, если его нет, положит
-`docker-compose.yml` в `/opt/sitecms` и поднимет магазин. Дальше визард в
+`docker-compose.yml` в `/opt/flycms` и поднимет магазин. Дальше визард в
 браузере: название, владелец, демо-товары.
 
 Нужен Linux с systemd и `curl`. Подробности, домен, плагины и удаление — в
@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/sitecms/release/main/install.sh | s
 ## Обновление
 
 ```sh
-cd /opt/sitecms && docker compose pull && docker compose up -d
+cd /opt/flycms && docker compose pull && docker compose up -d
 ```
 
 Данные при обновлении не трогаются: миграции догоняют схему при старте.
@@ -33,9 +33,9 @@ cd /opt/sitecms && docker compose pull && docker compose up -d
 
 ## Плагины
 
-В админке — «Маркетплейс»: каталог с сайта sitecms, бесплатные и платные
+В админке — «Маркетплейс»: каталог с сайта flycms, бесплатные и платные
 плагины, установка кнопкой без перезапуска. Свои — папка
-`/opt/sitecms/plugins/`, по подпапке на плагин. Как написать и опубликовать
+`/opt/flycms/plugins/`, по подпапке на плагин. Как написать и опубликовать
 — [docs/plugins.md](docs/plugins.md).
 
 ## Что внутри
@@ -50,7 +50,7 @@ cd /opt/sitecms && docker compose pull && docker compose up -d
 
 Здесь документация, `install.sh`, `docker-compose.yml` и `.env.dist` —
 образец переменных, которые `install.sh` записывает в `.env`. Образы движка —
-в [пакетах](https://github.com/sitecms/engine/pkgs/container/engine).
+в [пакетах](https://github.com/orgflycms/engine/pkgs/container/engine).
 Исходный код ядра закрыт; контракт плагинов открыт.
 
-Нашли ошибку или нужна функция — [issues](https://github.com/sitecms/release/issues).
+Нашли ошибку или нужна функция — [issues](https://github.com/orgflycms/release/issues).

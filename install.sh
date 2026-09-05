@@ -1,18 +1,18 @@
 #!/bin/sh
-# sitecms — установка на свой сервер одной командой:
+# flycms — установка на свой сервер одной командой:
 #
-#   curl -fsSL https://raw.githubusercontent.com/sitecms/release/main/install.sh | sudo sh
+#   curl -fsSL https://raw.githubusercontent.com/flycms/release/main/install.sh | sudo sh
 #
-# Ставит docker (если нет), кладёт compose в /opt/sitecms и поднимает
+# Ставит docker (если нет), кладёт compose в /opt/flycms и поднимает
 # магазин. Плагины — из маркетплейса в админке. Повторный запуск обновляет
 # образы и перезапускает службы, данные не трогает.
 #
 # Вопрос про адрес задаётся в терминал, даже когда скрипт пришёл по трубе:
-# он читает ответ из /dev/tty. Чтобы не спрашивал, задайте SITECMS_HOST.
+# он читает ответ из /dev/tty. Чтобы не спрашивал, задайте FLYCMS_HOST.
 set -eu
 
-repo=sitecms/release
-dir=/opt/sitecms
+repo=flycms/release
+dir=/opt/flycms
 raw="https://raw.githubusercontent.com/$repo/main"
 
 say() { printf '\033[1m==>\033[0m %s\n' "$1"; }
@@ -57,12 +57,12 @@ if [ -f .env ]; then
 	# Повторный запуск: домен и пароль базы уже есть, менять их нельзя —
 	# пароль зашит в данные Postgres.
 	. ./.env
-	host="${SITECMS_HOST:-}"
+	host="${FLYCMS_HOST:-}"
 fi
 if [ -z "${host:-}" ]; then
-	host="${SITECMS_HOST:-$(ask 'Домен или публичный IP магазина' "$(guess_host)")}"
+	host="${FLYCMS_HOST:-$(ask 'Домен или публичный IP магазина' "$(guess_host)")}"
 	password=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
-	printf 'SITECMS_HOST=%s\nDB_PASSWORD=%s\n' "$host" "$password" >.env
+	printf 'FLYCMS_HOST=%s\nDB_PASSWORD=%s\n' "$host" "$password" >.env
 	chmod 600 .env
 fi
 
@@ -77,7 +77,7 @@ case "$host" in
 *) tls="tls internal" ;;
 esac
 cat >Caddyfile <<EOC
-{\$SITECMS_HOST} {
+{\$FLYCMS_HOST} {
 	$tls
 	reverse_proxy engine:8080
 }
