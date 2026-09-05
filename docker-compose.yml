@@ -30,7 +30,7 @@ services:
       SITECMS_DSN: postgres://sitecms:${DB_PASSWORD}@db:5432/sitecms?sslmode=disable
       SITECMS_PLUGINS: /app/plugins
       SITECMS_FILES: /app/files
-      SITECMS_SECURE: "1"
+      SITECMS_SECURE: "true"
     volumes:
       # Плагины лежат снаружи: по подпапке на плагин, «Перечитать» в админке.
       - ./plugins:/app/plugins
