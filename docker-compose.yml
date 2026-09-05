@@ -29,10 +29,14 @@ services:
     environment:
       SITECMS_DSN: postgres://sitecms:${DB_PASSWORD}@db:5432/sitecms?sslmode=disable
       SITECMS_PLUGINS: /app/plugins
+      SITECMS_FILES: /app/files
       SITECMS_SECURE: "1"
     volumes:
       # Плагины лежат снаружи: по подпапке на плагин, «Перечитать» в админке.
       - ./plugins:/app/plugins
+      # Картинки, пока в настройках магазина не заданы ключи S3. С S3 папка
+      # остаётся пустой, и бэкапом магазина становится один дамп базы.
+      - ./files:/app/files
 
   caddy:
     image: caddy:2
