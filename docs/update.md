@@ -1,25 +1,34 @@
 # Обновление
 
 ```sh
-cd /opt/flycms && docker compose pull && docker compose up -d
+curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo sh
 ```
 
-Compose скачает свежий образ движка и пересоздаст контейнер. База и плагины
-не трогаются: миграции догоняют схему при старте, папка плагинов лежит
-снаружи.
+Та же команда, что и при установке. Скрипт видит, что магазин уже стоит:
+скачивает свежий движок, обновляет unit и перезапускает службу. Домен,
+пароль базы и данные не трогаются — миграции догоняют схему при старте,
+папки `files/` и `plugins/` лежат снаружи бинарника.
 
-Тот же результат даёт повторный запуск `install.sh`.
+Версия сейчас:
+
+```sh
+flycms -version
+```
 
 ## Конкретная версия
 
-В `docker-compose.yml` замените `ghcr.io/flycms/engine:latest` на
-`ghcr.io/flycms/engine:v0.1.0` и выполните `docker compose up -d`. Так же
-делается откат.
+```sh
+curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo FLYCMS_VERSION=v0.1.0 sh
+```
+
+Так же делается откат: список версий — в
+[релизах](https://github.com/orgflycms/release/releases).
 
 ## Если что-то пошло не так
 
 ```sh
-docker compose logs -f engine
+systemctl status flycms
+journalctl -u flycms -n 50 --no-pager
 ```
 
 Движок пишет, что не так с базой или с плагином. Сломанный плагин магазин

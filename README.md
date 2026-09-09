@@ -1,34 +1,37 @@
 # flycms
 
 Интернет-магазин на своём сервере, который расширяется плагинами. Ставится
-одной командой, работает в docker compose: движок, Postgres и Caddy с https.
+одной командой и работает без docker: бинарник под systemd и Postgres на той
+же машине. Https движок держит сам — сертификат на домен выписывает
+Let's Encrypt.
 
 Товары, корзина, заказы, админка. Плагины — папки с Go-кодом, которые ядро
 читает на лету: положили папку, нажали «Перечитать» — раздел появился в
 админке. Готовые плагины — в маркетплейсе, ставятся кнопкой из админки;
 контракт и инструкция, как написать свой, — в открытом репозитории
-[flycms/sdk](https://github.com/orgflycms/sdk).
+[sdk](https://github.com/orgflycms/sdk).
 
 ## Установка
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/flycms/release/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo sh
 ```
 
-Скрипт спросит домен или IP, поставит docker, если его нет, положит
-`docker-compose.yml` в `/opt/flycms` и поднимет магазин. Дальше визард в
-браузере: название, владелец, демо-товары.
+Скрипт спросит домен или IP, поставит Postgres, если своего на машине нет,
+положит движок в `/usr/local/bin/flycms`, данные — в `/opt/flycms` и
+поднимет службу. Дальше визард в браузере: название, владелец, демо-товары.
 
-Нужен Linux с systemd и `curl`. Подробности, домен, плагины и удаление — в
-[docs/install.md](docs/install.md).
+Нужен Debian или Ubuntu с systemd, `curl` и свободные порты 80 и 443.
+Подробности, домен, плагины и удаление — в [docs/install.md](docs/install.md).
 
 ## Обновление
 
 ```sh
-cd /opt/flycms && docker compose pull && docker compose up -d
+curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo sh
 ```
 
-Данные при обновлении не трогаются: миграции догоняют схему при старте.
+Та же команда: скачивается свежий движок, служба перезапускается. Данные,
+картинки и плагины не трогаются, миграции догоняют схему при старте.
 Подробности — [docs/update.md](docs/update.md).
 
 ## Плагины
@@ -41,16 +44,17 @@ cd /opt/flycms && docker compose pull && docker compose up -d
 ## Что внутри
 
 - Go, стандартная библиотека: `net/http`, `html/template`
-- Postgres 17 в соседнем контейнере
+- Postgres 18 на той же машине, вход по сокету — пароля к базе нет
 - Плагины исполняет [Yaegi](https://github.com/traefik/yaegi) — интерпретатор
   Go, тот же, что в Traefik
-- Сервер-рендеринг, без SPA и без сборщика JS; стили и шрифты вшиты в бинарник
+- Сервер-рендеринг, без SPA и без сборщика JS; стили, шрифты и значки вшиты
+  в бинарник
 
 ## Этот репозиторий
 
-Здесь документация, `install.sh`, `docker-compose.yml` и `.env.dist` —
-образец переменных, которые `install.sh` записывает в `.env`. Образы движка —
-в [пакетах](https://github.com/orgflycms/engine/pkgs/container/engine).
-Исходный код ядра закрыт; контракт плагинов открыт.
+Здесь документация, `install.sh` и `flycms.service`. Сам движок —
+[в релизах](https://github.com/orgflycms/release/releases): один статический
+файл на `linux/amd64` и `linux/arm64`. Исходный код ядра закрыт; контракт
+плагинов открыт.
 
 Нашли ошибку или нужна функция — [issues](https://github.com/orgflycms/release/issues).

@@ -1,39 +1,53 @@
 # Установка
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/flycms/release/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo sh
 ```
+
+Нужен Debian или Ubuntu с systemd, `curl`, права root и свободные порты 80
+и 443. Docker не нужен.
 
 Скрипт:
 
-1. ставит docker, если его нет (`get.docker.com`);
-2. спрашивает домен или публичный IP (или берёт `FLYCMS_HOST` из окружения);
-3. кладёт в `/opt/flycms` файлы `docker-compose.yml`, `.env` (домен и
-   пароль базы) и пустую папку `plugins/`;
-4. запускает `docker compose up -d` и печатает адрес.
+1. ставит Postgres 18 из репозитория PGDG, если своего на машине нет
+   (свой любой версии он берёт как есть и чужие базы не трогает);
+2. заводит системного пользователя `flycms`, папку `/opt/flycms` с
+   `files/` и `plugins/`, роль и базу `flycms` (вход по сокету, без пароля);
+3. спрашивает домен или публичный IP (или берёт `FLYCMS_HOST` из окружения)
+   и пишет `/etc/flycms.env`;
+4. скачивает движок в `/usr/local/bin/flycms` и unit
+   `/etc/systemd/system/flycms.service`, поднимает службу и печатает адрес.
 
 Дальше — визард: откройте `https://<адрес>/install`, он спросит название
-магазина, контакт, логин и пароль владельца и нужны ли демо-товары. До визарда
-магазин ничего другого не показывает, после — визард закрыт.
+магазина, контакт, логин и пароль владельца и нужны ли демо-товары. До
+визарда магазин ничего другого не показывает, после — визард закрыт.
 
 ## Что где
 
 ```
-/opt/flycms/
-  docker-compose.yml   движок + Postgres
-  .env                 FLYCMS_HOST, DB_PASSWORD — не менять после первого старта;
-                       образец — .env.dist в репозитории
-  plugins/             по подпапке на плагин
+/usr/local/bin/flycms            движок, один файл
+/etc/flycms.env                  домен, база, папки — правится руками
+/etc/systemd/system/flycms.service
+/opt/flycms/files/               картинки (пока не задан S3) и сертификаты
+/opt/flycms/plugins/             по подпапке на плагин
 ```
 
-Данные — в docker-томе `flycms_pgdata` (база) и в папке `/opt/flycms/files`
-(картинки и сертификаты).
+База — обычный кластер Postgres на этой же машине, база и роль `flycms`.
+Бэкап магазина: `pg_dump` базы плюс папка `/opt/flycms/files`.
+
+```sh
+systemctl status flycms      # что сейчас
+journalctl -u flycms -f      # журнал
+systemctl restart flycms     # после правки /etc/flycms.env
+```
 
 ## Домен и https
 
-Движок держит 80 и 443 сам: отдельного веб-сервера в поставке нет. Домен
-берётся из «Адреса магазина» в настройках (Система → Настройки), а пока он
-пуст — из `FLYCMS_HOST`, который спросил установщик. Впишите
+Движок держит 80 и 443 сам: отдельного веб-сервера в поставке нет. Право
+слушать низкие порты даёт systemd, root ему не нужен.
+
+Домен берётся из «Адреса магазина» в настройках (Система → Настройки), а
+пока он пуст — из `FLYCMS_HOST`, который спросил установщик. Впишите
 `https://ваш-домен`, сохраните и нажмите «Выпустить сертификат» в карточке
 «Домен и https»: движок проверит A-запись и получит сертификат у
 Let's Encrypt — нужны открытые 80 и 443; продление он берёт на себя. По
@@ -47,17 +61,29 @@ Let's Encrypt — нужны открытые 80 и 443; продление он
 
 ## Переменные движка
 
-Задаются в `docker-compose.yml`, секция `engine`:
+Живут в `/etc/flycms.env`, читаются службой при старте:
 
 - `FLYCMS_DSN` — строка подключения к Postgres;
-- `FLYCMS_PLUGINS` — папка плагинов внутри контейнера (`/app/plugins`);
-- `FLYCMS_MARKETPLACE` — адрес API маркетплейса (`https://<сайт>/api/v1`);
-  по умолчанию маркетплейс flycms;
+- `FLYCMS_FILES` — папка картинок и сертификатов (`/opt/flycms/files`);
+- `FLYCMS_PLUGINS` — папка плагинов (`/opt/flycms/plugins`);
+- `FLYCMS_MARKETPLACE` — адрес API маркетплейса (`https://flycms.ru/api/v1`);
 - `FLYCMS_HOST` — домен магазина при установке; после первого сохранения
   «Адреса магазина» в настройках не читается;
-- `FLYCMS_TLS_ADDR` — порт https; пустая переменная выключает свой TLS —
-  так магазин ставят за чужой nginx;
-- `FLYCMS_SECURE=1` — кука админки только по https (со своим TLS так и есть).
+- `FLYCMS_ADDR`, `FLYCMS_TLS_ADDR` — порты (`:80` и `:443`). Пустой
+  `FLYCMS_TLS_ADDR` выключает свой https: так магазин ставят за чужой
+  nginx, отдав ему 443 и проксируя на `FLYCMS_ADDR`.
+
+## Уже есть nginx на 80 и 443
+
+Отдайте магазину свой порт и выключите его https:
+
+```sh
+printf 'FLYCMS_ADDR=127.0.0.1:8080\nFLYCMS_TLS_ADDR=\n' >>/etc/flycms.env
+systemctl restart flycms
+```
+
+Дальше `proxy_pass http://127.0.0.1:8080;` — сертификат в этом случае
+держит nginx.
 
 ## Плагины
 
@@ -69,7 +95,12 @@ Let's Encrypt — нужны открытые 80 и 443; продление он
 ## Удаление
 
 ```sh
-cd /opt/flycms && docker compose down -v && cd / && rm -rf /opt/flycms
+systemctl disable --now flycms
+rm -f /etc/systemd/system/flycms.service /etc/flycms.env /usr/local/bin/flycms
+systemctl daemon-reload
+su postgres -c 'dropdb flycms; dropuser flycms'
+rm -rf /opt/flycms
+userdel flycms
 ```
 
-`-v` удаляет тома вместе с базой — без него данные останутся.
+Postgres остаётся: его могли поставить не ради магазина.

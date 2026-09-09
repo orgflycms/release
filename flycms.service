@@ -1,0 +1,45 @@
+# Служба магазина flycms. Кладётся скриптом install.sh в
+# /etc/systemd/system/flycms.service; переменные — в /etc/flycms.env.
+#
+#   systemctl status flycms      что сейчас
+#   journalctl -u flycms -f      журнал
+#   systemctl restart flycms     после правки /etc/flycms.env
+#
+# Секретов здесь нет намеренно: unit читается кем угодно. Пароля к базе нет
+# вовсе — Postgres на этой же машине пускает по совпадению системного
+# пользователя и роли (peer), хранить нечего.
+
+[Unit]
+Description=flycms — интернет-магазин
+Documentation=https://github.com/orgflycms/release
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flycms
+Group=flycms
+WorkingDirectory=/opt/flycms
+EnvironmentFile=/etc/flycms.env
+ExecStart=/usr/local/bin/flycms
+
+# 80 и 443 — привилегированные порты, но root магазину не нужен: systemd
+# выдаёт ровно одно право — слушать низкий порт.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+Restart=always
+RestartSec=2
+
+# Писать нужно ровно в два места: свою папку (картинки, сертификаты,
+# плагины) и сокет Postgres. «-» перед путём — не падать, если базы на
+# машине ещё нет.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/flycms
+ReadWritePaths=-/run/postgresql
+
+[Install]
+WantedBy=multi-user.target
