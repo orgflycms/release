@@ -220,6 +220,48 @@ check_database_connection() {
 	runuser -u "$user" -- psql -X -w --dbname="$dsn" -Atc 'SELECT 1' >/dev/null || die "не войти в базу: проверьте FLYCMS_DSN в $envfile"
 }
 
+# Роли плагинов заводит сам движок (engine/internal/plugin/roles.go), и без
+# CREATEROLE плагинам закрыта только база — магазин работает. Поэтому две
+# функции ниже лишь предупреждают: ни установку, ни обновление они не
+# останавливают.
+grant_createrole() {
+	role=$(runuser -u "$user" -- psql -X -w --dbname="$dsn" -Atc \
+		"SELECT quote_ident(rolname) FROM pg_roles WHERE rolname = current_user AND NOT (rolcreaterole OR rolsuper)") ||
+		{ warn "Не проверить право CREATEROLE у роли базы: плагины с доступом к базе могут не работать."; return 0; }
+	[ -n "$role" ] || return 0
+	if [ "$dsn" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ]; then
+		# До Postgres 16 CREATEROLE меняет любые несуперпользовательские роли
+		# кластера — сами такое не выдаём. Версия не определилась — как старая.
+		server=$(runuser -u postgres -- psql -X -w -h /run/postgresql -p 5432 -d postgres -Atc 'SHOW server_version_num') || server=0
+		case "$server" in '' | *[!0-9]*) server=0 ;; esac
+		if [ "$server" -lt 160000 ]; then
+			warn "На этой версии Postgres право CREATEROLE позволяет менять чужие роли кластера, поэтому установщик его не выдаёт: плагины с доступом к базе работать не будут, остальной магазин работает."
+			warn "Если сервер базы отдан только магазину, выдайте его вручную: su postgres -c \"psql -c 'ALTER ROLE $role CREATEROLE'\""
+			return 0
+		fi
+		runuser -u postgres -- psql -X -w -h /run/postgresql -p 5432 -d postgres -qc "ALTER ROLE $role CREATEROLE" && return 0
+	fi
+	warn "Роли базы $role не хватает права CREATEROLE: плагины с доступом к базе работать не будут, остальной магазин работает."
+	warn "Выдайте его от суперпользователя Postgres: ALTER ROLE $role CREATEROLE — до Postgres 16 только на отдельном сервере, см. docs/plugins.md."
+}
+
+check_plugin_login() {
+	# Роли плагинов входят паролем по TCP на 127.0.0.1 того же порта; у PGDG
+	# такая строка в pg_hba.conf стоит по умолчанию. Решает первая подходящая
+	# строка, как в самом Postgres. Чужой конфиг не правим и прочитать его
+	# можем только у локальной базы.
+	[ "$dsn" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ] || return 0
+	method=$(runuser -u postgres -- psql -X -w -h /run/postgresql -p 5432 -d postgres -Atc "SELECT auth_method FROM pg_hba_file_rules
+		WHERE error IS NULL AND type IN ('host', 'hostnossl', 'hostnogssenc') AND database && ARRAY['all', '$user'] AND user_name && ARRAY['all']
+		AND CASE WHEN address IN ('all', 'samehost', 'samenet', 'localhost') THEN true
+			WHEN address ~ '^[0-9.]+\$' AND netmask IS NOT NULL THEN ('127.0.0.1'::inet & netmask::inet) = (address::inet & netmask::inet)
+			ELSE false END
+		ORDER BY line_number LIMIT 1") || return 0
+	case "$method" in scram-sha-256 | md5 | password | trust) return 0 ;; esac
+	warn "pg_hba.conf не пускает вход по паролю на 127.0.0.1: плагины с доступом к базе не подключатся."
+	warn "Нужна строка «host all all 127.0.0.1/32 scram-sha-256» выше запрещающих; установщик этот файл не меняет."
+}
+
 ensure_database() {
 	state=$(runuser -u postgres -- psql -X -w -h /run/postgresql -p 5432 -d postgres -Atc \
 		"SELECT EXISTS(SELECT FROM pg_roles WHERE rolname = 'flycms'), EXISTS(SELECT FROM pg_database WHERE datname = 'flycms')") || die "не войти в локальный Postgres от postgres через peer"
@@ -331,6 +373,8 @@ main() {
 	dsn=$(env_value "$envfile" FLYCMS_DSN '')
 	if [ "$updating" = false ] && [ "$dsn" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ]; then ensure_database; fi
 	check_database_connection
+	grant_createrole
+	check_plugin_login
 	addr=$(env_value "$envfile" FLYCMS_ADDR :80)
 	tls_addr=$(env_value "$envfile" FLYCMS_TLS_ADDR :443)
 	health_url=$(listen_url http "$addr") || die "неверный FLYCMS_ADDR: $addr"
