@@ -149,9 +149,36 @@ FLYCMS_ADDR=127.0.0.1:8080
 FLYCMS_TLS_ADDR=
 ```
 
-После `systemctl restart flycms` настройте nginx:
-`proxy_pass http://127.0.0.1:8080;`. Сертификат и внешний https в этом
-случае держит nginx. На первой установке адреса можно передать сразу:
+После `systemctl restart flycms` настройте `location /` в существующем
+HTTPS-блоке `server` магазина в nginx:
+
+```nginx
+location / {
+    client_max_body_size 256m;
+
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+Без этих заголовков админка может отвечать 403 «Недопустимый источник
+запроса», а в sitemap и canonical вместо публичного домена может
+появиться `127.0.0.1`. Nginx подключается к движку локально по
+`127.0.0.1:8080`, поэтому движок принимает от него `X-Forwarded-*`.
+Сертификат и внешний https в этом случае держит nginx.
+
+В админке («Система → Настройки») задайте «Адрес магазина» как публичный
+https-адрес, например `https://shop.example`.
+
+`client_max_body_size 256m` даёт место для пакетной загрузки изображений
+товаров и импорта CSV. Если увеличиваете размер загружаемых изображений
+в настройках магазина, увеличьте и лимит nginx с учётом всей отправки.
+Проверьте и примените настройки: `nginx -t && systemctl reload nginx`.
+
+На первой установке адреса можно передать сразу:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo FLYCMS_HOST=shop.example FLYCMS_ADDR=127.0.0.1:8080 FLYCMS_TLS_ADDR= sh
