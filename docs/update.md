@@ -4,7 +4,8 @@
 curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo sh
 ```
 
-Запускайте обновление в `tmux` или `screen`, чтобы потеря SSH не оборвала
+Вошли как root, а `sudo` на сервере нет — уберите `sudo` из команды:
+`… | sh`. Запускайте обновление в `tmux` или `screen`, чтобы потеря SSH не оборвала
 сеанс. Сам установщик игнорирует HUP во время обновления; во время
 обработки ошибки также игнорирует INT и TERM, чтобы возврат бинарника
 не прервался на полпути.
@@ -53,6 +54,8 @@ root. Удалённую или управляемую базу обновляй
    apt install -y postgresql-common ca-certificates
    /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
    ```
+
+   Скрипт покажет, какой репозиторий подключит, и попросит нажать Enter.
 
 3. Поставьте Postgres 18 и посмотрите кластеры. В первой колонке — версия
    действующего кластера, дальше она обозначена `15`; подставьте свою:
@@ -122,8 +125,15 @@ start`, — затем запустите магазин и разберитес
 терминала отсчёт такой же, вопросов скрипт не задаёт. Проверить заранее:
 
 ```sh
-sudo sh -c 'set -a; . /etc/flycms.env; runuser -u flycms -- flycms -license'
+systemd-run --wait --pipe --collect --quiet --uid=flycms --gid=flycms \
+  --property=WorkingDirectory=/opt/flycms \
+  --property=EnvironmentFile=/etc/flycms.env \
+  /usr/local/bin/flycms -license
 ```
+
+Команда выполняется от root. Файл окружения читает systemd: через `.` или
+`source` его подключать нельзя — `&` в строке подключения к базе оболочка
+примет за команду, и статус покажет «база недоступна».
 
 Команда печатает статус лицензии установленной версии: `status: valid` —
 ключ действует, `outdated` — версия вышла после срока обновлений,
@@ -254,6 +264,10 @@ tar -czf "$saved/data.tar.gz" -C /opt/flycms files plugins certs
 systemctl start flycms
 printf 'Копия: %s\n' "$saved"
 ```
+
+У магазина версии v0.1.0 папки `/opt/flycms/certs` ещё нет — сертификаты
+лежат внутри `files`, и `tar` остановится на `certs`. Уберите `certs` из
+команды: папка появится после обновления.
 
 Если в переменных заданы другие папки или используются systemd drop-in
 файлы, сохраните и их. Объекты из S3 копируются средствами выбранного

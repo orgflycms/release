@@ -345,6 +345,9 @@ ensure_database() {
 }
 
 warn_busy_ports() {
+	# Магазин уже слушает другие порты (за nginx): чужой процесс на 80/443 — норма.
+	busy=${addr:-:80}
+	case "${busy##*:}:${tls_addr##*:}" in 80:* | *:443) ;; *) return 0 ;; esac
 	pid=$(systemctl show --property=MainPID --value flycms 2>/dev/null || printf 0)
 	busy=$(ss -Hltnp 'sport = :80 or sport = :443' 2>/dev/null | grep -Fv "pid=${pid:-0}," || true)
 	if [ -n "$busy" ]; then
