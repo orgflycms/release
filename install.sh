@@ -143,10 +143,34 @@ service_responds() {
 	case "$code" in 200 | 301 | 302 | 303 | 307 | 308 | 401 | 403) return 0 ;; *) return 1 ;; esac
 }
 
+# Служба падает сразу после запуска: systemd исчерпал попытки (failed) или
+# уже трижды перезапустил её по Restart=always с начала ожидания. Считаем от
+# значения на старте ожидания: остановка из паузы между перезапусками
+# счётчик NRestarts не обнуляет (systemd 252). Долгая миграция сюда не
+# попадает: процесс при ней жив и перезапусков нет.
+restart_count() {
+	restarts=$(systemctl show --property=NRestarts --value flycms 2>/dev/null) || restarts=
+	case "$restarts" in '' | *[!0-9]*) return 1 ;; esac
+}
+
+service_crashing() {
+	if systemctl is-failed --quiet flycms; then return 0; fi
+	restart_count || return 1
+	[ "$restarts" -ge $((restarts_base + 3)) ]
+}
+
 wait_ready() {
+	crashed=false
+	restarts_base=0
+	if restart_count; then restarts_base=$restarts; fi
 	deadline=$(($(date +%s) + 300))
 	while [ "$(date +%s)" -lt "$deadline" ]; do
 		if service_responds; then return 0; fi
+		# Ждать все 300 секунд падающую службу — пять минут простоя магазина.
+		if service_crashing; then
+			crashed=true
+			return 1
+		fi
 		sleep 1
 	done
 	return 1
@@ -157,7 +181,9 @@ finish_install() {
 	trap - 0
 	trap '' HUP INT TERM
 	rm -f -- "$bin.new" || warn "не удалось убрать $bin.new"
-	if [ "$restore_needed" = true ] && ! systemctl is-active --quiet flycms; then
+	# Падающая служба между перезапусками на миг «активна» — поэтому вместе
+	# с активностью смотрим, не застали ли её падения при ожидании.
+	if [ "$restore_needed" = true ] && { [ "${crashed:-false}" = true ] || ! systemctl is-active --quiet flycms; }; then
 		warn "Новая версия не запустилась. Возвращаю прежний бинарник: $old_binary"
 		if [ "${unit_saved:-false}" = true ]; then
 			# Прежнему бинарнику — прежний unit: новый мог быть причиной отказа.
@@ -200,7 +226,7 @@ backup_before_update() {
 	(umask 077; runuser -u "$user" -- pg_dump -w --no-owner --no-acl -Z 6 --dbname="$dsn" >"$dump") || die "pg_dump завершился ошибкой; бинарник не заменён"
 	gzip -t "$dump" || die "резервная копия повреждена; бинарник не заменён"
 	chmod 600 "$dump"
-	printf '%s\n' flycms-install-backup-v1 >"$dir/backup/$stem.installer-backup"
+	(umask 077; printf '%s\n' flycms-install-backup-v1 >"$dir/backup/$stem.installer-backup")
 	restore_needed=true
 }
 
@@ -410,8 +436,11 @@ main() {
 	asset="flycms-linux-$arch"
 	say "Скачиваю и проверяю движок ($asset, $version)"
 	curl -fsSL -o "$bin.new" "$release/$asset" || die "не скачать бинарник $version"
-	curl -fsSL -o "$work/SHA256SUMS" "$release/SHA256SUMS" || die "в релизе нет SHA256SUMS; прежний бинарник сохранён"
-	verify_download "$work/SHA256SUMS" "$bin.new" "$asset" || die "контрольная сумма не совпала или SHA256SUMS повреждён; прежний бинарник сохранён"
+	# На первой установке прежнего бинарника нет — и обещать его нечего.
+	kept=
+	[ "$updating" = false ] || kept="; прежний бинарник не тронут"
+	curl -fsSL -o "$work/SHA256SUMS" "$release/SHA256SUMS" || die "в релизе нет SHA256SUMS$kept"
+	verify_download "$work/SHA256SUMS" "$bin.new" "$asset" || die "контрольная сумма не совпала или SHA256SUMS повреждён$kept"
 	chmod 755 "$bin.new"
 	got=$("$bin.new" -version) || die "проверенный файл не запускается на этой системе"
 	[ "$got" = "$version" ] || die "версия бинарника $got не совпадает с тегом $version"
@@ -486,7 +515,10 @@ main() {
 	systemctl enable flycms >/dev/null || die "не включить службу"
 	say "Запускаю магазин"
 	systemctl restart flycms || die "служба не запустилась"
-	wait_ready || die "служба не ответила на своём порту за 300 секунд; journalctl -u flycms -n 50 --no-pager"
+	if ! wait_ready; then
+		[ "$crashed" = false ] || die "служба падает сразу после запуска; journalctl -u flycms -n 50 --no-pager"
+		die "служба не ответила на своём порту за 300 секунд; journalctl -u flycms -n 50 --no-pager"
+	fi
 	restore_needed=false
 	resume_needed=false
 	if [ "$updating" = true ]; then
