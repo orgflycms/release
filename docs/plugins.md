@@ -15,6 +15,9 @@
 
 ## Что даёт `sdk.API`
 
+- `Name()` — полное имя плагина «пространство.имя», например `vitams.promo`;
+- `Path(href)` — полный адрес маршрута плагина для ссылок и форм,
+  например `Path("/settings")` → `/admin/x/vitams.promo/settings`;
 - `Menu(label, href)` — пункт в меню админки;
 - `Handle(pattern, handler)` — свои адреса под `/admin/x/<имя>/`, только
   для вошедшего;
