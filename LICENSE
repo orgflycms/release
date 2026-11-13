@@ -1,0 +1,39 @@
+На что распространяется эта лицензия
+
+Лицензия MIT ниже относится только к файлам этого репозитория:
+установочному скрипту `install.sh`, unit-файлу `flycms.service` и
+документации (`README.md`, `docs/`).
+
+Бинарник `flycms`, опубликованный в релизах этого репозитория, и исходники
+ядра этой лицензией НЕ покрываются. Они распространяются на условиях
+лицензионного договора: https://flycms.ru/legal/license. Коротко: бинарник
+можно бесплатно скачать, поставить и использовать в своём магазине без
+ограничения по времени — до 200 товаров в каталоге; платная лицензия
+снимает лимит и даёт исходники ядра. Исходники покупатель читает и правит
+под свой магазин; публиковать, распространять и перепродавать продукт и
+его исходники нельзя. При расхождении этого пересказа с договором
+действует договор.
+
+------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 ИП Мусин Виталий Наильевич
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

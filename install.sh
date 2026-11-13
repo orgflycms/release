@@ -156,6 +156,11 @@ finish_install() {
 	rm -f -- "$bin.new" || warn "не удалось убрать $bin.new"
 	if [ "$restore_needed" = true ] && ! systemctl is-active --quiet flycms; then
 		warn "Новая версия не запустилась. Возвращаю прежний бинарник: $old_binary"
+		if [ "${unit_saved:-false}" = true ]; then
+			# Прежнему бинарнику — прежний unit: новый мог быть причиной отказа.
+			install -o root -g root -m 644 "$unit_prev" "$unit" && systemctl daemon-reload ||
+				warn "Прежний unit не возвращён, он сохранён в $unit_prev"
+		fi
 		if systemctl stop flycms && install -o root -g root -m 755 "$old_binary" "$bin" &&
 			systemctl restart flycms && wait_ready; then
 			warn "Прежний бинарник возвращён, служба отвечает."
@@ -194,6 +199,31 @@ backup_before_update() {
 	chmod 600 "$dump"
 	printf '%s\n' flycms-install-backup-v1 >"$dir/backup/$stem.installer-backup"
 	restore_needed=true
+}
+
+# Unit релиза заменяет установленный: иначе правки unit не доходят до уже
+# поставленных магазинов. Обе функции обновление не останавливают: не вышло
+# скачать или сохранить прежний файл — остаётся прежний unit.
+announce_unit_replace() {
+	warn "ВНИМАНИЕ: $unit отличается от unit релиза $version и будет заменён."
+	warn "Прежний файл сохранится рядом: $unit_prev"
+	warn "Свои настройки службы держите в $unit.d/*.conf (systemctl edit flycms): этот каталог установщик не трогает."
+	warn "Прервать — Ctrl+C: до конца отсчёта ничего не изменено. Продолжение через 15 секунд."
+	sleep 15
+}
+
+replace_unit() {
+	[ -n "$unit_new" ] || return 0
+	if [ -f "$unit" ]; then
+		! cmp -s "$unit_new" "$unit" || return 0
+		# Уже сохранённую копию не затираем, а без копии прежний unit не меняем.
+		if [ -e "$unit_prev" ] || [ -L "$unit_prev" ] || ! cp -p "$unit" "$unit_prev"; then
+			warn "Не сохранить прежний unit в $unit_prev: $unit оставлен без замены."
+			return 0
+		fi
+		unit_saved=true
+	fi
+	install -o root -g root -m 644 "$unit_new" "$unit" || die "не установить $unit"
 }
 
 configure_pgdg() {
@@ -309,6 +339,7 @@ main() {
 	work=$(mktemp -d /var/tmp/flycms-install-XXXX) || die "не создать временную папку"
 	resume_needed=false
 	restore_needed=false
+	unit_saved=false
 	trap finish_install 0
 	trap 'exit 1' HUP INT TERM
 	if [ "$updating" = true ]; then trap '' HUP; fi
@@ -329,9 +360,14 @@ main() {
 	chmod 755 "$bin.new"
 	got=$("$bin.new" -version) || die "проверенный файл не запускается на этой системе"
 	[ "$got" = "$version" ] || die "версия бинарника $got не совпадает с тегом $version"
-	if [ ! -f "$unit" ]; then
-		curl -fsSL -o "$work/flycms.service" "https://raw.githubusercontent.com/$repo/$version/flycms.service" || die "в теге $version нет flycms.service"
-		[ -s "$work/flycms.service" ] || die "получен пустой flycms.service"
+	unit_new=$work/flycms.service
+	unit_prev=$unit.prev-$(date -u +%Y%m%dT%H%M%SZ)
+	if ! curl -fsSL -o "$unit_new" "https://raw.githubusercontent.com/$repo/$version/flycms.service" || [ ! -s "$unit_new" ]; then
+		[ -f "$unit" ] || die "в теге $version нет flycms.service"
+		warn "Не скачать flycms.service из тега $version: прежний unit оставлен как есть."
+		unit_new=''
+	elif [ -f "$unit" ] && ! cmp -s "$unit_new" "$unit"; then
+		announce_unit_replace
 	fi
 
 	if ! command -v psql >/dev/null; then
@@ -387,7 +423,7 @@ main() {
 	if [ "$updating" = true ]; then backup_before_update; fi
 	# Служба остановлена: install не пишет поверх исполняемого процесса.
 	install -o root -g root -m 755 "$bin.new" "$bin" || die "не установить бинарник"
-	if [ ! -f "$unit" ]; then install -o root -g root -m 644 "$work/flycms.service" "$unit"; fi
+	replace_unit
 	systemctl daemon-reload || die "systemd не перечитал настройки"
 	systemctl enable flycms >/dev/null || die "не включить службу"
 	say "Запускаю магазин"
@@ -403,6 +439,7 @@ main() {
 		done <"$work/expired-backups"
 		say "Копия до обновления: $dump; прежний бинарник: $old_binary"
 	fi
+	[ "$unit_saved" = false ] || say "Unit службы заменён на unit релиза; прежний: $unit_prev"
 	say "Готово. flycms $version"
 	printf '\n    Магазин: https://%s\n    Админка: https://%s/admin\n' "$host" "$host"
 	print_install_link
