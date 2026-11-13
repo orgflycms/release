@@ -22,10 +22,12 @@ curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh |
 поднимет службу. В конце появится ссылка `/install?token=<код>`:
 визард по ней спросит название, владельца и нужны ли демо-товары.
 
-Для автоматической установки PostgreSQL нужны Debian 12 (bookworm),
-Debian 13 (trixie), Ubuntu 22.04 (jammy) или Ubuntu 24.04 (noble). Если
-`psql` уже установлен, версия системы не мешает обновлению. Сборки —
-amd64 и arm64; нужны systemd, `curl` и по умолчанию свободные 80 и 443.
+Требования к серверу: Linux с systemd, amd64 или arm64, **Postgres 18 или
+новее**, по умолчанию свободные 80 и 443. На сервер без Postgres скрипт
+ставит 18 сам — на Debian 12 (bookworm), Debian 13 (trixie), Ubuntu 22.04
+(jammy) и Ubuntu 24.04 (noble). Если на сервере уже стоит Postgres старше
+18, установка и обновление останавливаются в самом начале, ничего не
+изменив: [как обновить Postgres](docs/update.md#обновление-postgres).
 Стандартная база — локальная, с входом по сокету без пароля; при обновлении
 используется заданный DSN, включая TCP и пароль. Чужая база `flycms` при
 первой установке автоматически не подхватывается. Подробности и nginx — в
@@ -74,7 +76,8 @@ curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh |
 ## Что внутри
 
 - Go, стандартная библиотека: `net/http`, `html/template`
-- Postgres 18 на той же машине, вход по сокету — пароля к базе нет
+- Postgres 18 или новее; по умолчанию на той же машине, вход по сокету —
+  пароля к базе нет
 - Плагины исполняет [Yaegi](https://github.com/traefik/yaegi) — интерпретатор
   Go, тот же, что в Traefik
 - Сервер-рендеринг, без SPA и без сборщика JS; стили, шрифты и значки вшиты
