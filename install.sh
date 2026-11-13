@@ -7,6 +7,9 @@ say() { printf '\033[1m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m  %s\033[0m\n' "$1" >&2; }
 die() { warn "Ошибка: $1"; exit 1; }
 
+# Минимальная версия Postgres. Её же установщик ставит на сервер без Postgres.
+pg=18
+
 select_arch() {
 	case "$1" in
 	x86_64 | amd64) printf '%s\n' amd64 ;;
@@ -83,7 +86,7 @@ prepare_settings() {
 		(umask 077; printf 'FLYCMS_HOST=%s\nFLYCMS_INSTALL_TOKEN=%s\n' "$host" "$install_token" >"$envfile")
 		[ "$tty_ok" = true ] || warn "Адрес можно изменить в FLYCMS_HOST в $envfile, затем — в настройках магазина."
 	fi
-	ensure_env "$envfile" FLYCMS_DSN "postgres:///$user?host=/run/postgresql&sslmode=disable"
+	ensure_env "$envfile" FLYCMS_DSN "${FLYCMS_DSN:-postgres:///$user?host=/run/postgresql&sslmode=disable}"
 	ensure_env "$envfile" FLYCMS_FILES "$dir/files"
 	ensure_env "$envfile" FLYCMS_PLUGINS "$dir/plugins"
 	ensure_env "$envfile" FLYCMS_MARKETPLACE https://flycms.ru/api/v1
@@ -238,6 +241,38 @@ configure_pgdg() {
 	fi
 }
 
+# Версия сервера, к которому пойдёт магазин. До первой установки нет ни
+# пользователя службы, ни роли базы: стандартную базу спрашиваем от postgres,
+# свою — от того, кто есть. Ошибки молчат: о недоступной базе скажет проверка
+# соединения ниже.
+postgres_version() {
+	command -v psql >/dev/null || return 1
+	if [ "$1" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ]; then
+		runuser -u postgres -- psql -X -w -h /run/postgresql -p 5432 -d postgres -Atc 'SHOW server_version_num'
+	elif id -u "$user" >/dev/null 2>&1; then
+		runuser -u "$user" -- psql -X -w --dbname="$1" -Atc 'SHOW server_version_num'
+	else
+		psql -X -w --dbname="$1" -Atc 'SHOW server_version_num'
+	fi 2>/dev/null
+}
+
+# Останавливает только на известной версии ниже минимальной. Версия не
+# определилась — это не «старая»: сервера может не быть вовсе.
+require_postgres() {
+	found=$(postgres_version "$1") || return 0
+	case "$found" in '' | *[!0-9]*) return 0 ;; esac
+	[ "$found" -lt "${pg}0000" ] || return 0
+	if [ "$updating" = true ]; then
+		warn "Магазин не обновлён и продолжает работать на прежней версии."
+	elif [ "$1" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ]; then
+		warn "Ставьте магазин на сервер без Postgres — установщик поставит $pg сам, обновите Postgres на этом сервере или укажите свою базу версии $pg или новее в FLYCMS_DSN."
+	else
+		warn "Укажите в FLYCMS_DSN базу на Postgres $pg или новее либо обновите этот сервер базы."
+	fi
+	warn "Как обновить Postgres: https://github.com/orgflycms/release/blob/main/docs/update.md#обновление-postgres"
+	die "найден Postgres $((found / 10000)), а нужен $pg или новее"
+}
+
 check_new_database() {
 	# Наличие клиента не означает наличие подходящего локального сервера.
 	present=$(runuser -u postgres -- psql -X -w -h /run/postgresql -p 5432 -d postgres -Atc \
@@ -260,19 +295,10 @@ grant_createrole() {
 		{ warn "Не проверить право CREATEROLE у роли базы: плагины с доступом к базе могут не работать."; return 0; }
 	[ -n "$role" ] || return 0
 	if [ "$dsn" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ]; then
-		# До Postgres 16 CREATEROLE меняет любые несуперпользовательские роли
-		# кластера — сами такое не выдаём. Версия не определилась — как старая.
-		server=$(runuser -u postgres -- psql -X -w -h /run/postgresql -p 5432 -d postgres -Atc 'SHOW server_version_num') || server=0
-		case "$server" in '' | *[!0-9]*) server=0 ;; esac
-		if [ "$server" -lt 160000 ]; then
-			warn "На этой версии Postgres право CREATEROLE позволяет менять чужие роли кластера, поэтому установщик его не выдаёт: плагины с доступом к базе работать не будут, остальной магазин работает."
-			warn "Если сервер базы отдан только магазину, выдайте его вручную: su postgres -c \"psql -c 'ALTER ROLE $role CREATEROLE'\""
-			return 0
-		fi
 		runuser -u postgres -- psql -X -w -h /run/postgresql -p 5432 -d postgres -qc "ALTER ROLE $role CREATEROLE" && return 0
 	fi
 	warn "Роли базы $role не хватает права CREATEROLE: плагины с доступом к базе работать не будут, остальной магазин работает."
-	warn "Выдайте его от суперпользователя Postgres: ALTER ROLE $role CREATEROLE — до Postgres 16 только на отдельном сервере, см. docs/plugins.md."
+	warn "Выдайте его от суперпользователя Postgres: ALTER ROLE $role CREATEROLE"
 }
 
 check_plugin_login() {
@@ -323,7 +349,7 @@ main() {
 	envfile=/etc/flycms.env
 	unit=/etc/systemd/system/flycms.service
 	user=flycms
-	pg=18
+	local_dsn="postgres:///$user?host=/run/postgresql&sslmode=disable"
 	version=${FLYCMS_VERSION:-latest}
 	[ "$(id -u)" = 0 ] || die "нужны права root — запустите через sudo"
 	[ -d /run/systemd/system ] || die "нужен systemd"
@@ -335,6 +361,13 @@ main() {
 	[ ! -e "$bin" ] || [ -f "$envfile" ] || die "есть бинарник без $envfile — проверьте прежнюю установку вручную"
 	updating=false
 	[ ! -f "$bin" ] || updating=true
+	# Версию Postgres проверяем до любых изменений: при обновлении магазин
+	# остаётся работать на прежнем бинарнике.
+	case "${FLYCMS_DSN:-}" in *'
+'*) die "в FLYCMS_DSN не должно быть переводов строк" ;; esac
+	dsn=${FLYCMS_DSN:-$local_dsn}
+	if [ -f "$envfile" ] && env_has "$envfile" FLYCMS_DSN; then dsn=$(env_value "$envfile" FLYCMS_DSN ''); fi
+	require_postgres "$dsn"
 
 	work=$(mktemp -d /var/tmp/flycms-install-XXXX) || die "не создать временную папку"
 	resume_needed=false
@@ -388,7 +421,7 @@ main() {
 		systemctl enable --now postgresql >/dev/null || die "не запустить Postgres"
 	fi
 
-	if [ ! -f "$envfile" ]; then check_new_database; fi
+	if [ ! -f "$envfile" ] && [ "$dsn" = "$local_dsn" ]; then check_new_database; fi
 	id -u "$user" >/dev/null 2>&1 || useradd --system --home-dir "$dir" --shell /usr/sbin/nologin "$user"
 	for folder in "$dir" "$dir/files" "$dir/plugins" "$dir/certs" "$dir/backup"; do
 		[ ! -L "$folder" ] || die "папка $folder оказалась символической ссылкой"
@@ -407,8 +440,10 @@ main() {
 	chmod 640 "$envfile"
 	chown "root:$user" "$envfile"
 	dsn=$(env_value "$envfile" FLYCMS_DSN '')
-	if [ "$updating" = false ] && [ "$dsn" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ]; then ensure_database; fi
+	if [ "$updating" = false ] && [ "$dsn" = "$local_dsn" ]; then ensure_database; fi
 	check_database_connection
+	# Повтор для базы, которую в начале спросить было нечем или не от кого.
+	require_postgres "$dsn"
 	grant_createrole
 	check_plugin_login
 	addr=$(env_value "$envfile" FLYCMS_ADDR :80)
