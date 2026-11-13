@@ -229,6 +229,25 @@ replace_unit() {
 	install -o root -g root -m 644 "$unit_new" "$unit" || die "не установить $unit"
 }
 
+# Лицензия и новая версия. Спрашиваем новый бинарник до любых изменений: он
+# отвечает за себя — «после обновления на меня ключ действовать перестанет»
+# (status: outdated). Обновление не запрещаем — магазин работает и как
+# бесплатный, — но хозяин должен узнать об этом до обновления, а не после.
+# Спросить не вышло (релиз без -license, база недоступна) — идём дальше.
+check_license() {
+	report=$(runuser -u "$user" -- env FLYCMS_DSN="$dsn" "$bin.new" -license 2>/dev/null) || return 0
+	status=$(printf '%s\n' "$report" | sed -n 's/^status: //p' | head -n 1)
+	[ "$status" = outdated ] || return 0
+	warn "ВНИМАНИЕ: версия $version вышла после срока обновлений вашей лицензии."
+	message=$(printf '%s\n' "$report" | sed -n 's/^message: //p' | head -n 1)
+	[ -z "$message" ] || warn "$message"
+	warn "Прервать — Ctrl+C: до конца отсчёта ничего не изменено, магазин работает на прежней версии."
+	for left in 30 20 10; do
+		warn "Обновление продолжится через $left секунд."
+		sleep 10
+	done
+}
+
 configure_pgdg() {
 	curl -fsSL -o "$work/pgdg.asc" https://www.postgresql.org/media/keys/ACCC4CF8.asc || die "не скачать ключ PGDG"
 	[ ! -L "$source" ] && [ ! -L "$key" ] || die "путь PGDG оказался символической ссылкой"
@@ -393,6 +412,7 @@ main() {
 	chmod 755 "$bin.new"
 	got=$("$bin.new" -version) || die "проверенный файл не запускается на этой системе"
 	[ "$got" = "$version" ] || die "версия бинарника $got не совпадает с тегом $version"
+	if [ "$updating" = true ]; then check_license; fi
 	unit_new=$work/flycms.service
 	unit_prev=$unit.prev-$(date -u +%Y%m%dT%H%M%SZ)
 	if ! curl -fsSL -o "$unit_new" "https://raw.githubusercontent.com/$repo/$version/flycms.service" || [ ! -s "$unit_new" ]; then
