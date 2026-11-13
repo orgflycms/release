@@ -1,5 +1,8 @@
 # Служба магазина flycms. Кладётся скриптом install.sh в
 # /etc/systemd/system/flycms.service; переменные — в /etc/flycms.env.
+# Обновление заменяет этот файл unit-файлом релиза (прежний сохраняется
+# рядом как flycms.service.prev-<дата>). Свои настройки службы — в
+# /etc/systemd/system/flycms.service.d/*.conf: systemctl edit flycms.
 #
 #   systemctl status flycms      что сейчас
 #   journalctl -u flycms -f      журнал
