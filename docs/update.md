@@ -175,7 +175,7 @@ flycms -version
 ## Конкретная версия
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo FLYCMS_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/orgflycms/release/main/install.sh | sudo FLYCMS_VERSION=v0.2.0-beta.2 sh
 ```
 
 Тег должен содержать бинарник, `SHA256SUMS` и `flycms.service` в дереве
