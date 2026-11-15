@@ -89,14 +89,30 @@ shop_started() {
 	return 1
 }
 
-# Возврат на прежний кластер: новый, созданный этим запуском, удаляется,
-# прежнему возвращаются порт и автозапуск. Сам pg_upgradecluster прежние
+# Возврат на прежний кластер: новый сохраняется остановленным, прежнему
+# возвращаются порт и автозапуск. Сам pg_upgradecluster прежние
 # данные не меняет — только переводит кластер на другой порт и в ручной запуск.
 restore_cluster() {
 	warn "Возвращаю магазин на прежний кластер Postgres $old/$name."
 	systemctl stop flycms 2>/dev/null || true
 	if cluster_exists "$pg" "$name"; then
-		pg_dropcluster --stop "$pg" "$name" || warn "Новый кластер $pg/$name не удалён: pg_dropcluster --stop $pg $name"
+		# Проверка запуска могла застать сбой уже после приёма нового заказа.
+		# Удаление кластера уничтожило бы его единственную копию. Автозапуск
+		# отключаем, чтобы после перезагрузки он не занял порт прежнего.
+		if ! pg_ctlcluster "$pg" "$name" stop; then
+			# После частичного переноса кластер уже может быть остановлен:
+			# pg_ctlcluster тогда тоже возвращает ненулевой код.
+			case "$(cluster_state "$pg" "$name")" in
+			*" down" | *" down,"*) ;;
+			*) warn "Новый кластер $pg/$name не остановлен; автоматический возврат прерван."; return 1 ;;
+			esac
+		fi
+		printf 'manual\n' >"$work/new-start.conf" || return 1
+		install -o postgres -g postgres -m 644 "$work/new-start.conf" "/etc/postgresql/$pg/$name/start.conf" || {
+			warn "Не отключён автозапуск нового кластера; автоматический возврат прерван."
+			return 1
+		}
+		warn "Новый кластер $pg/$name сохранён остановленным. Перед повторным переносом проверьте в нём заказы, принятые во время проверки запуска."
 	fi
 	pg_ctlcluster "$old" "$name" stop >/dev/null 2>&1 || true
 	pg_conftool "$old" "$name" set port "$port" || warn "Порт $port прежнему кластеру не возвращён."
@@ -114,9 +130,8 @@ finish() {
 	trap - 0
 	trap '' HUP INT TERM
 	if [ "$result" != 0 ] && [ "$moving" = true ]; then
-		restore_cluster
-		if [ "$(shop_postgres)" = "$found" ] && shop_started; then
-			warn "Магазин работает на прежнем Postgres $old. Данные не изменены."
+		if restore_cluster && [ "$(shop_postgres)" = "$found" ] && shop_started; then
+			warn "Магазин работает на прежнем Postgres $old. Прежний кластер сохранён."
 		else
 			warn "Магазин на прежнем кластере не запустился. Проверьте pg_lsclusters и journalctl -u flycms -n 50 --no-pager."
 		fi
@@ -182,10 +197,12 @@ main() {
 	fi
 
 	say "Останавливаю магазин и переношу базу: Postgres $old → $pg"
-	rows=$(shop_rows) || die "не посчитать строки в базе магазина"
 	[ ! -f "/etc/postgresql/$old/$name/start.conf" ] || cp -p "/etc/postgresql/$old/$name/start.conf" "$work/start.conf"
 	stopped=true
 	systemctl stop flycms || die "не остановить службу магазина"
+	# Снимок только после остановки: заказ между подсчётом и остановкой
+	# иначе выглядел бы как повреждение данных при переносе.
+	rows=$(shop_rows) || die "не посчитать строки в базе магазина"
 	moving=true
 	pg_upgradecluster -v "$pg" "$old" "$name" >"$work/pg_upgradecluster.log" 2>&1 ||
 		die "pg_upgradecluster завершился ошибкой; журнал: $work/pg_upgradecluster.log"
