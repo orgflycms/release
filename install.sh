@@ -12,6 +12,12 @@ die() { warn "Ошибка: $1"; exit 1; }
 # версии магазина, знает её бинарник (check_postgres).
 pg=18
 
+# Базовый выпуск: миграции до него сведены в одну, и версии новее обновляют
+# магазин только начиная с него. Пара к sqldb.BaseRelease в engine: меняются
+# вместе. Движок такому магазину откажет и сам, но уже после остановки
+# службы и копии базы — а причина осталась бы в журнале.
+base=v0.2.0
+
 select_arch() {
 	case "$1" in
 	x86_64 | amd64) printf '%s\n' amd64 ;;
@@ -257,6 +263,28 @@ replace_unit() {
 	install -o root -g root -m 644 "$unit_new" "$unit" || die "не установить $unit"
 }
 
+# older A B: версия A строго старше B.
+older() {
+	[ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
+}
+
+# Магазин старше базового выпуска на версию новее базовой не обновляется:
+# отказ до скачивания, с командами по шагам. Версию не вида vX.Y.Z (своя
+# сборка) не судим — ей ответит сам движок.
+check_update_path() {
+	current=$("$bin" -version 2>/dev/null) || return 0
+	case "$current" in *[!a-zA-Z0-9._+-]*) return 0 ;; v[0-9]*.[0-9]*.[0-9]*) ;; *) return 0 ;; esac
+	case "$version" in v[0-9]*.[0-9]*.[0-9]*) ;; *) return 0 ;; esac
+	older "$current" "$base" && older "$base" "$version" || return 0
+	warn "Магазин не обновлён и продолжает работать на версии $current."
+	warn "Версия $version обновляет магазины начиная с $base, поэтому с $current обновление идёт в два шага."
+	warn "Шаг 1 — до $base:"
+	warn "curl -fsSL https://raw.githubusercontent.com/$repo/main/install.sh | sudo FLYCMS_VERSION=$base sh"
+	warn "Шаг 2 — когда магазин заработает на $base, повторите команду, которой запускали это обновление."
+	warn "Подробнее: https://github.com/$repo/blob/main/docs/update.md#с-v010--через-v020"
+	die "с $current сразу на $version обновиться нельзя — сначала $base"
+}
+
 # Новый бинарник отвечает за себя до любых изменений: подходит ли ему сервер
 # базы магазина и действует ли на него ключ лицензии. Спросить не вышло
 # (релиз без -license, база недоступна) — ответ пуст, идём дальше.
@@ -460,6 +488,7 @@ main() {
 		version=${latest##*/}
 	fi
 	case "$version" in '' | latest | *[!a-zA-Z0-9._+-]* | [!a-zA-Z0-9]*) die "некорректный тег релиза" ;; esac
+	[ "$updating" = false ] || check_update_path
 	release="https://github.com/$repo/releases/download/$version"
 	asset="flycms-linux-$arch"
 	say "Скачиваю и проверяю движок ($asset, $version)"
