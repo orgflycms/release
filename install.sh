@@ -7,7 +7,9 @@ say() { printf '\033[1m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m  %s\033[0m\n' "$1" >&2; }
 die() { warn "Ошибка: $1"; exit 1; }
 
-# Минимальная версия Postgres. Её же установщик ставит на сервер без Postgres.
+# Версия Postgres для первой установки: её установщик ставит на сервер без
+# Postgres, а сервер старше — отказ. Обновлению она не указ: что нужно новой
+# версии магазина, знает её бинарник (check_postgres).
 pg=18
 
 select_arch() {
@@ -255,13 +257,31 @@ replace_unit() {
 	install -o root -g root -m 644 "$unit_new" "$unit" || die "не установить $unit"
 }
 
-# Лицензия и новая версия. Спрашиваем новый бинарник до любых изменений: он
-# отвечает за себя — «после обновления на меня ключ действовать перестанет»
-# (status: outdated). Обновление не запрещаем — магазин работает и как
-# бесплатный, — но хозяин должен узнать об этом до обновления, а не после.
-# Спросить не вышло (релиз без -license, база недоступна) — идём дальше.
+# Новый бинарник отвечает за себя до любых изменений: подходит ли ему сервер
+# базы магазина и действует ли на него ключ лицензии. Спросить не вышло
+# (релиз без -license, база недоступна) — ответ пуст, идём дальше.
+ask_new_binary() {
+	report=$(runuser -u "$user" -- env FLYCMS_DSN="$dsn" "$bin.new" -license 2>/dev/null) || report=
+}
+
+# Postgres и новая версия. «Последней версии» обновление не требует: конфликт
+# — только когда миграциям и коду новой версии нужен сервер новее, чем стоит
+# (postgres_conflict). Тогда останавливаемся до остановки службы; нет
+# конфликта — ни слова.
+check_postgres() {
+	conflict=$(printf '%s\n' "$report" | sed -n 's/^postgres_conflict: //p' | head -n 1)
+	[ -n "$conflict" ] || return 0
+	warn "Магазин не обновлён и продолжает работать на прежней версии."
+	warn "Обновите Postgres и повторите обновление магазина. Стандартная установка — одной командой:"
+	warn "curl -fsSL https://raw.githubusercontent.com/$repo/main/postgres-upgrade.sh | sudo sh"
+	die "$conflict"
+}
+
+# Лицензия и новая версия: «после обновления на меня ключ действовать
+# перестанет» (status: outdated). Обновление не запрещаем — магазин работает
+# и как бесплатный, — но хозяин должен узнать об этом до обновления, а не
+# после.
 check_license() {
-	report=$(runuser -u "$user" -- env FLYCMS_DSN="$dsn" "$bin.new" -license 2>/dev/null) || return 0
 	status=$(printf '%s\n' "$report" | sed -n 's/^status: //p' | head -n 1)
 	[ "$status" = outdated ] || return 0
 	warn "ВНИМАНИЕ: версия $version вышла после срока обновлений вашей лицензии."
@@ -301,15 +321,15 @@ postgres_version() {
 	fi 2>/dev/null
 }
 
-# Останавливает только на известной версии ниже минимальной. Версия не
-# определилась — это не «старая»: сервера может не быть вовсе.
+# Первая установка останавливается на известной версии ниже $pg. Версия не
+# определилась — это не «старая»: сервера может не быть вовсе. Обновление
+# сюда не заходит: его решает check_postgres.
 require_postgres() {
+	[ "$updating" = false ] || return 0
 	found=$(postgres_version "$1") || return 0
 	case "$found" in '' | *[!0-9]*) return 0 ;; esac
 	[ "$found" -lt "${pg}0000" ] || return 0
-	if [ "$updating" = true ]; then
-		warn "Магазин не обновлён и продолжает работать на прежней версии."
-	elif [ "$1" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ]; then
+	if [ "$1" = "postgres:///$user?host=/run/postgresql&sslmode=disable" ]; then
 		warn "Ставьте магазин на сервер без Postgres — установщик поставит $pg сам, обновите Postgres на этом сервере или укажите свою базу версии $pg или новее в FLYCMS_DSN."
 	else
 		warn "Укажите в FLYCMS_DSN базу на Postgres $pg или новее либо обновите этот сервер базы."
@@ -409,8 +429,7 @@ main() {
 	[ ! -e "$bin" ] || [ -f "$envfile" ] || die "есть бинарник без $envfile — проверьте прежнюю установку вручную"
 	updating=false
 	[ ! -f "$bin" ] || updating=true
-	# Версию Postgres проверяем до любых изменений: при обновлении магазин
-	# остаётся работать на прежнем бинарнике.
+	# Версию Postgres первая установка проверяет до любых изменений.
 	case "${FLYCMS_DSN:-}" in *'
 '*) die "в FLYCMS_DSN не должно быть переводов строк" ;; esac
 	dsn=${FLYCMS_DSN:-$local_dsn}
@@ -444,7 +463,11 @@ main() {
 	chmod 755 "$bin.new"
 	got=$("$bin.new" -version) || die "проверенный файл не запускается на этой системе"
 	[ "$got" = "$version" ] || die "версия бинарника $got не совпадает с тегом $version"
-	if [ "$updating" = true ]; then check_license; fi
+	if [ "$updating" = true ]; then
+		ask_new_binary
+		check_postgres
+		check_license
+	fi
 	unit_new=$work/flycms.service
 	unit_prev=$unit.prev-$(date -u +%Y%m%dT%H%M%SZ)
 	if ! curl -fsSL -o "$unit_new" "https://raw.githubusercontent.com/$repo/$version/flycms.service" || [ ! -s "$unit_new" ]; then
