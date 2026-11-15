@@ -277,6 +277,15 @@ check_postgres() {
 	die "$conflict"
 }
 
+# После свода миграций новый бинарник может требовать промежуточный выпуск.
+# Узнаём это до остановки службы и снятия копии, пока магазин ещё работает.
+check_schema() {
+	conflict=$(printf '%s\n' "$report" | sed -n 's/^schema_conflict: //p' | head -n 1)
+	[ -n "$conflict" ] || return 0
+	warn "Магазин не обновлён и продолжает работать на прежней версии."
+	die "$conflict"
+}
+
 # Лицензия и новая версия: «после обновления на меня ключ действовать
 # перестанет» (status: outdated). Обновление не запрещаем — магазин работает
 # и как бесплатный, — но хозяин должен узнать об этом до обновления, а не
@@ -466,6 +475,7 @@ main() {
 	if [ "$updating" = true ]; then
 		ask_new_binary
 		check_postgres
+		check_schema
 		check_license
 	fi
 	unit_new=$work/flycms.service
